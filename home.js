@@ -1,3 +1,164 @@
+// ===== REEMPLAZA ESTA FUNCIÓN COMPLETA EN TU home.js =====
+function abrirPanelLateral(biho, $filaEmpleado) {
+    console.log("--- PROCESANDO CAPTURA DINÁMICA ---");
+    
+    // 1. Mostrar visualmente el panel lateral de inmediato al frente de todo
+    var $drawer = $('#drawerDetalleEmpleado');
+    if ($drawer.length > 0) {
+        $drawer.css({
+            'display': 'flex',
+            'flex-direction': 'column',
+            'position': 'fixed',
+            'top': '0',
+            'right': '0',
+            'width': $(window).width() <= 576 ? '100vw' : '450px',
+            'height': '100vh',
+            'background-color': '#ffffff',
+            'box-shadow': '-5px 0 25px rgba(0,0,0,0.3)',
+            'z-index': '99999999'
+        }).addClass('abierto');
+    }
+
+    // Mostrar el fondo oscuro transparente de fondo
+    $('#backfond').show().css({
+        'position': 'fixed', 'top': '0', 'left': '0',
+        'width': '100vw', 'height': '100vh',
+        'background': 'rgba(0,0,0,0.4)', 'z-index': '9999999'
+    });
+
+    // 2. Extraer metadatos básicos del empleado clickeado
+    var nombreEmpleado = $filaEmpleado.find('.nombre-usuario').val() || (biho ? (biho.empleadoText_bihoPa || biho.empleadotext_bihopa) : 'Empleado');
+    var operacionTexto = $filaEmpleado.find('td:eq(0)').text() || (biho ? biho.operacion_bihopa : 'Operación');
+    var otTexto = $filaEmpleado.find('td:eq(3)').text() || (biho ? biho.ot_bihopa : 'OT');
+    var estandarBiho = biho ? parseFloat(biho.estandar_bihopa || biho.estandar_bihoPa || 112) : 112;
+
+    $('#drawerTituloEmpleado').html(`👤 ${nombreEmpleado}`);
+
+    // RASTREO: Buscamos todas las subfilas de los bloques horarios vinculados abajo del empleado clickeado
+    var bloquesAProcesar = [];
+    var $posiblesSubfilas = $filaEmpleado.nextAll('tr');
+    
+    $posiblesSubfilas.each(function() {
+        var $subFila = $(this);
+        
+        // Detener la búsqueda si nos topamos con otra fila de empleado principal
+        if ($subFila.hasClass('fila-encontrada') || $subFila.attr('data-ot-id') || $subFila.hasClass('fila-con-historial')) {
+            return false; 
+        }
+
+        if ($subFila.hasClass('fila-detalle-biho') || $subFila.find('.sumar-detalle').length > 0 || $subFila.find('.qty-detalle').length > 0) {
+            var idDet = $subFila.attr('data-detalle-id') || $subFila.find('.sumar-detalle').attr('data-id') || $subFila.find('input').attr('data-id');
+            var cantText = $subFila.find('.qty-detalle').text() || $subFila.find('.sumar-detalle').val() || '0';
+            var cant = parseFloat(cantText);
+            if (isNaN(cant)) cant = 0;
+
+            // Limpieza y formateo del texto del bloque horario
+            var textoHorario = $subFila.text().replace(/[\n\t]/g, ' ').replace(/\s+/g, ' ').trim();
+            if (textoHorario.toLowerCase().includes('horario:')) {
+                var partes = textoHorario.split(/horario:/i);
+                textoHorario = 'Bloque Horario: ' + partes[1].trim().split(' ')[0];
+            } else {
+                textoHorario = 'Bloque Activo #' + (bloquesAProcesar.length + 1);
+            }
+
+            bloquesAProcesar.push({
+                id: idDet || 'temp_' + bloquesAProcesar.length,
+                horario: textoHorario,
+                cantidad: cant,
+                esperado: 51
+            });
+        }
+    });
+
+    // Respaldo por objeto directo de base de datos
+    if (bloquesAProcesar.length === 0 && biho && biho.DetalleBiho && biho.DetalleBiho.length > 0) {
+        biho.DetalleBiho.forEach(function(d) {
+            var idDetalle = d.id_bihode || d.id_biho_det || d.id_bihoDe;
+            if(!idDetalle) return;
+            var cantRaw = d.qty_bihoDe !== undefined ? d.qty_bihoDe : (d.qty_bihode !== undefined ? d.qty_bihode : 0);
+            var cant = parseFloat(cantRaw);
+            
+            bloquesAProcesar.push({
+                id: idDetalle,
+                horario: d.horario_bihode || d.horario_bihoDe || 'Bloque Horario',
+                cantidad: isNaN(cant) ? 0 : cant,
+                esperado: parseFloat(d.esperado_bihode || d.esperado_bihoDe || 51) || 51
+            });
+        });
+    }
+
+    // 3. USO DEL TEMPORIZADOR ASÍNCRONO PARA INYECTAR LOS DATOS SEGUROS
+    setTimeout(function() {
+        var elContenedorBody = document.getElementById("drawerContenidoBody");
+        if (!elContenedorBody) {
+            console.error("No se encontró el cuerpo del panel en la pantalla");
+            return;
+        }
+
+        // Vaciamos el contenedor e inyectamos la tarjeta informativa fija
+        var htmlContenido = `
+            <div style="background: #eef2f6; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #1e3a5f;">
+                <p style="margin: 0; font-size: 14px; color: #1e293b;"><strong>Orden de Trabajo:</strong> ${otTexto}</p>
+                <p style="margin: 4px 0 0 0; font-size: 14px; color: #1e293b;"><strong>Operación:</strong> ${operacionTexto}</p>
+                <p style="margin: 4px 0 0 0; font-size: 14px; color: #1e293b;"><strong>Capacidad Estándar:</strong> ${estandarBiho} pzs</p>
+            </div>
+        `;
+
+        // Generamos dinámicamente las tarjetas de cada bloque de horario detectado
+        if (bloquesAProcesar.length > 0) {
+            bloquesAProcesar.forEach(function(bloque) {
+                var porcent = bloque.esperado > 0 ? (bloque.cantidad / bloque.esperado) * 100 : 0;
+                porcent = Math.round(porcent);
+
+                htmlContenido += `
+                    <div class="card-horario-detalle" data-detalle-id="${bloque.id}" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:15px; margin-bottom:12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="color:#0f172a; font-weight:600;"><strong>${bloque.horario}</strong></span>
+                            <span class="badge" style="font-size: 12px; background-color: #007bff; color:#fff; padding: 4px 8px; border-radius: 4px;">Esperado: ${bloque.esperado} pzs</span>
+                        </div>
+                        
+                        <div class="progress" style="height: 6px; margin-bottom: 12px; background-color: #e9ecef; border-radius: 4px; overflow: hidden; display:flex;">
+                            <div class="progress-bar bg-success" role="progressbar" style="width: ${porcent}%; background-color: #28a745; height: 100%;" aria-valuenow="${porcent}" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                            <span style="font-size: 13px; color: #64748b;"> Avance Actual: <strong style="color: #0f172a; font-size: 14px;">${bloque.cantidad} pzs</strong> (${porcent}%)</span>
+                       <input type="number" class="form-control form-control-sm sumar-drawer-input-final" placeholder="+ Cantidad" style="width: 100px; text-align: center; border: 1px solid #ced4da; border-radius: 4px; padding: 2px 5px;">
+                      </div>
+                    </div>
+                `;
+            });
+        } else {
+            htmlContenido += `
+                <div style="text-align: center; color: #64748b; margin-top: 30px; padding: 20px; background:#fff; border:1px dashed #ced4da; border-radius:8px;">
+                    <p style="font-size: 15px; margin:0;">⚠️ No se encontraron bloques horarios activos debajo de este empleado en la tabla.</p>
+                </div>
+            `;
+        }
+
+        // Pintamos el contenido de forma definitiva
+        elContenedorBody.innerHTML = htmlContenido;
+        console.log("--- CONTENIDO INYECTADO AL COPIAR EL DOM ---");
+    }, 50);
+
+    return true;
+}
+
+
+
+
+// Eventos de cierre del panel derecho
+$(document).ready(function() {
+    $('#btnCerrarDrawer, #backfond').on('click', function() {
+        $('#drawerDetalleEmpleado').removeClass('abierto');
+        $('#backfond').fadeOut(200);
+    });
+});
+
+
+
+
+
 var URLGEneral='https://4664764.app.netsuite.com'
 const funcidUnico = () => Math.floor(Math.random() * 10000).toString().padStart(4, '0');
 
@@ -38,6 +199,91 @@ const main = () => {
   localStorage.setItem("objEje", "")
    var  searchParams = new URLSearchParams(window.location.search)
    var opcion = searchParams.get('opc')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  $(document).on('click', 'tr.fila-desplegable.fila-encontrada', function(e) {
+    if ($(e.target).is('input, button, select')) return;
+    const $fila = $(this);
+    $('#drawerTituloEmpleado').html(`👤 ${$fila.find('.nombre-usuario').val()}`);
+    const $contenedorBody = $('#drawerContenidoBody').empty();
+    
+    // ... [Lógica de renderizado de datos] ...
+    
+    $('#backfond').show();
+    $('#drawerDetalleEmpleado').addClass('abierto');
+});
+// Cierre del panel
+$('#btnCerrarDrawer, #backfond').on('click', function() {
+    $('#drawerDetalleEmpleado').removeClass('abierto');
+    $('#backfond').hide();
+});
+
+
+  $(document).on('change', '.sumar-detalle-drawer-input', function() {
+    var $input = $(this);
+    var $card = $input.closest('.card-horario-detalle');
+    var idDetalle = $card.attr('data-detalle-id');
+    var qtyASumar = $input.val();
+    
+    if (!qtyASumar || parseInt(qtyASumar) <= 0) return;
+
+    // Buscamos la fila oculta original en la tabla para heredar sus datos de envío
+    var $filaEquivalente = $(`tr.fila-detalle-biho[data-detalle-id="${idDetalle}"]`);
+    
+    // Si la fila existe en la tabla original, le transferimos el valor e invocamos tu evento change existente
+    if ($filaEquivalente.length > 0) {
+        $filaEquivalente.find('.sumar-detalle').val(qtyASumar).trigger('change');
+        $input.val(''); // Limpiamos el input del panel
+    } else {
+        alert("No se encontró el mapeo de la fila horaria en la tabla principal.");
+    }
+});
+
+
+  // 4. Asegurar el enlace de guardado masivo cuando escriban en el panel
+$(document).off('change', '.sumar-drawer-input-final').on('change', '.sumar-drawer-input-final', function() {
+    var $input = $(this);
+    var idDetalle = $input.closest('.card-horario-detalle').attr('data-detalle-id');
+    var valorASumar = $input.val();
+    
+    if (!valorASumar || parseInt(valorASumar) <= 0) return;
+
+    // Buscamos el input oculto original en el DOM de la tabla
+    var $inputOriginal = $(`input.sumar-detalle[data-id="${idDetalle}"], input[data-id="${idDetalle}"].sumar-detalle`);
+    if ($inputOriginal.length > 0) {
+        $inputOriginal.val(valorASumar).trigger('change');
+        $input.val(''); // Limpiar el panel tras enviar el dato
+    } else {
+        // Respaldo por si el elemento no tiene data-id explícito pero la fila coincide
+        var $filaEquiv = $(`tr.fila-detalle-biho[data-detalle-id="${idDetalle}"]`);
+        if($filaEquiv.length > 0) {
+            $filaEquiv.find('input').val(valorASumar).trigger('change');
+            $input.val('');
+        }
+    }
+});
+  
+
+  
+  
+
+
+
+
+
+  
   
 
 
@@ -257,6 +503,7 @@ var bihoAct= $("#noBiho").attr('noact')
         var cantidadAct=$fila.find('.qty-detalle').text()
         var Qty=$(this).val()
        var NuevoValor=parseInt(cantidadAct)+parseInt(Qty)
+       console.log(NuevoValor)
 
 
           const confirmar = confirm(
@@ -886,217 +1133,115 @@ function calcularPorcentajeGlobal(otId, opId,idpadre) {
     return porcentajeTotal;
 }
 
-function cargarRegistrosAlmacenadosConEfecto(bihorarios,tienenext,btn) {
-   // var bihorarios = data.Response.Bihorario;
-//  console.log(bihorarios)
-  var MayorBihorario=0;
+// ===== REEMPLAZA ESTA FUNCIÓN COMPLETA EN TU home.js =====
+// ===== REEMPLAZA ESTA FUNCIÓN COMPLETA EN TU home.js =====
+function cargarRegistrosAlmacenadosConEfecto(bihorarios, tienenext, btn) {
     Object.keys(bihorarios).forEach(function(key) {
         var biho = bihorarios[key];
-      var idBiorario=biho.id_bihopa
-    
-       var encontrado=$("#cuerpoTabla").find("tr[data-seguimiento-id='"+idBiorario+"']").first()
+        var idBiorario = biho.id_bihopa;
+        
+        // 1. Buscamos la fila base de la operación original
+        var $filaBase = $('#cuerpoTabla').find('tr[data-ot-id="' + biho.ot_bihopa + '"][data-operacion-id="' + biho.operacion_bihopa + '"]').first();
+        var tiempo = parseFloat($filaBase.find('.TiempoOP').text()) || 1;
+        var estandarBiho = parseFloat(biho.estandar_bihopa) || 112;
+        var AccionesXTiempo = parseFloat((estandarBiho / tiempo).toFixed(0)) || 1;
 
-      if(encontrado.length==0){
-          var $filaBase = $('#cuerpoTabla').find('tr[data-ot-id="' + biho.ot_bihopa + '"][data-operacion-id="' + biho.operacion_bihopa + '"]').first();
-      // console.log($filaBase)
-      if ($filaBase.length > 0) {
-            // Indicar visualmente que la fila original tiene datos ocultos cargados
-            $filaBase.addClass('fila-con-historial').attr('title', 'Clic para ver registros guardados');
+        // 2. Aquí es donde NetSuite crea la fila real para el empleado asignado
+        var $filaEmpleadoExistente = $("#cuerpoTabla").find("tr[data-seguimiento-id='" + idBiorario + "']");
         
-            $filaBase.find("td").first().attr('title', 'Clic para ver registros guardados').addClass('fila-con-historial')
-            // 1. Clonar fila base para el registro Bihorario
+        if ($filaEmpleadoExistente.length == 0 && $filaBase.length > 0) {
             var $nuevaFilaBiho = $filaBase.clone();
-        var tiempo=$nuevaFilaBiho.find('.TiempoOP').text()
-         console.log('tiempo',tiempo)
-        
-            $nuevaFilaBiho.removeClass('fila-con-historial').addClass('fila-desplegable fila-encontrada d-none');
+            $nuevaFilaBiho.removeClass('fila-con-historial').addClass('fila-desplegable fila-encontrada');
             $nuevaFilaBiho.attr('data-target-ot', biho.ot_bihopa).attr('data-target-op', biho.operacion_bihopa);
             $nuevaFilaBiho.attr('data-seguimiento-id', biho.id_bihopa);
-         $nuevaFilaBiho.removeAttr('title');
-        
-          $nuevaFilaBiho.attr('total_bihopa', biho.total_bihopa);
-          $nuevaFilaBiho.attr('tiempo_bihopa', biho.tiempo_bihopa);
-          $nuevaFilaBiho.attr('pzxbiho_bihopa', biho.pzxbiho_bihopa);
-          $nuevaFilaBiho.attr('pzot_bihopa', biho.pzot_bihopa);
-          //  $nuevaFilaBiho.find('button').removeClass('btn-clonar').addClass('btn-agregar').html('+ Horario');
-
-           $nuevaFilaBiho.find('.btn-clonar').removeClass('btn-clonar').addClass('btn-terminarOp').text('Terminar Operacion')
-     
-        
-        var $imputEstandar=  $nuevaFilaBiho.find('.estandar-operacion')
-      
-        var AccionesXTiempo=parseInt( biho.estandar_bihopa)/parseFloat(tiempo)
-        AccionesXTiempo=AccionesXTiempo.toFixed(0)
-
-       $imputEstandar.css({
-        'background-color': '#e9ecef',
-        'cursor': 'not-allowed'
-    }).prop('readonly', true).val( biho.estandar_bihopa);
-         
-         
+            $nuevaFilaBiho.find('.total_biho').val(biho.total_bihopa);
+            $nuevaFilaBiho.find('.tiempo_biho').val(biho.tiempo_bihopa);
+            $nuevaFilaBiho.find('.estandar-biho').val(biho.estandar_bihopa);
+            
             var $inputEmpleado = $nuevaFilaBiho.find('.nombre-usuario');
-            $inputEmpleado.val(biho.empleadoText_bihoPa).attr('data-id-seleccionado', biho.empleadoid_bihopa).prop('readonly', true);
-            $nuevaFilaBiho.find('td:eq(5)').text(biho.fecha_bihopa);
+            $inputEmpleado.val(biho.empleadoText_bihoPa).attr('data-id-seleccionado', biho.empleadoid_bihopa);
+            
+            // Hacemos que la fila del empleado sea clickeable de forma elegante
+            $nuevaFilaBiho.css({'cursor': 'pointer'}).attr('title', 'Clic para ver bloques horarios');
+            $nuevaFilaBiho.off('click').on('click', function(e) {
+                // Si hace clic en botones de la fila (como Terminar Operación), no abras el panel
+                if ($(e.target).is('input, button, select')) return;
+                abrirPanelLateral(biho, $(this));
+            });
+
+            $filaBase.after($nuevaFilaBiho);
+        }
+        else if ($filaEmpleadoExistente.length > 0) {
+            // Si la fila ya existía, también le asignamos el evento de clic
+            $filaEmpleadoExistente.css({'cursor': 'pointer'}).attr('title', 'Clic para ver bloques horarios');
+            $filaEmpleadoExistente.off('click').on('click', function(e) {
+                if ($(e.target).is('input, button, select')) return;
+                abrirPanelLateral(biho, $(this));
+            });
+        }
+
+        // 3. Procesamos los desgloses horarios (los bloques 1, 2, etc. con el botón sumar)
+      // ===== REEMPLAZA ESTE BLOQUE INTERNO EN cargarRegistrosAlmacenadosConEfecto DE home.js =====
+if (biho.DetalleBiho && biho.DetalleBiho.length > 0) {
+    biho.DetalleBiho.forEach(function(detalle) {
+        // Evaluamos todas las variantes de ID para asegurar que no se salte ningún bloque
+        var idDetalleReal = detalle.id_bihode || detalle.id_biho_det || detalle.id_bihoDe;
+        if (!idDetalleReal) return;
         
-           $nuevaFilaBiho.find('input.nombre-usuario').css({
-        'background-color': '#e9ecef',
-        'cursor': 'not-allowed'
-    });
+        var $filaDetalleOriginal = $('#cuerpoTabla').find('tr.fila-detalle-biho[data-detalle-id="' + idDetalleReal + '"]');
         
+        if ($filaDetalleOriginal.length == 0) {
+            // Mapeo ultra-seguro de las cantidades reales de tu base de datos (tolerante a mayúsculas)
+            var cantidadRaw = detalle.qty_bihoDe !== undefined ? detalle.qty_bihoDe : (detalle.qty_bihode !== undefined ? detalle.qty_bihode : 0);
+            var cantidad = cantidadRaw !== null ? parseFloat(cantidadRaw) : 0;
+            if (isNaN(cantidad)) cantidad = 0;
 
-            // Envolver contenido de las celdas de Bihorario en un div oculto para la animación
-            $nuevaFilaBiho.find('td').wrapInner('<div class="slide-wrapper" style="display:block;" />');
-          var grupoEmpleado = `
-<tr class="grupo-empleado"
-    data-grupo="${biho.id_bihopa}">
-    <td colspan="11">
+            var esperadoRaw = detalle.esperado_bihode || detalle.esperado_bihoDe || AccionesXTiempo;
+            var esperado = parseFloat(esperadoRaw);
+            if (isNaN(esperado)) esperado = AccionesXTiempo;
 
-        <span class="grupo-titulo">
-            👤 ${biho.empleadoText_bihoPa}
-        </span>
+            var horarioTexto = detalle.horario_bihode || detalle.horario_bihoDe || 'N/A';
 
-        <span class="grupo-op">
-            ${$filaBase.find('td:eq(7)').text()}
-        </span>
-
-    </td>
-</tr>
-`;
-        
-        
-        // $filaBase.after($nuevaFilaBiho);
-        $filaBase.after($nuevaFilaBiho);
-$nuevaFilaBiho.before(grupoEmpleado);
-        encontrado=$nuevaFilaBiho
-  }
-         }
-    
-     
-            // 2. Procesar fila de DetalleBiho si existe
-      var BihoracionInProgress=[]
-     if (biho.DetalleBiho && biho.DetalleBiho.length > 0) {
-                var detallesInvertidos = biho.DetalleBiho.slice().reverse();
-              
-               detallesInvertidos.forEach(function(detalle) {
-                  console.log(detalle)
-                    var hora = detalle.horario_bihode ? detalle.horario_bihode  : 'N/A';
-                    var cantidad = detalle.qty_bihode !== null ? detalle.qty_bihode : 0;
-                   var idDetalle = detalle.id_bihode 
-                   var estatus = detalle.estatus_bihode 
-                   var esperado = detalle.esperado_bihode 
-                  var porcent=(cantidad/AccionesXTiempo)*100
-                  var encontradoDetalle=$("#cuerpoTabla").find("tr[data-detalle-id='"+idDetalle+"']").first()
-
-                   var NoBiho=detalle.no_bihode
-                  var motivoTM=detalle.motibotm
-                  var totTM=detalle.tottm
- 
-                //console.log(encontradoDetalle)
-                 if(!idDetalle){
-                   return
-                 }
-                 
-
-                  porcent=porcent.toFixed(0)
-
-                 if(MayorBihorario<NoBiho){
-                   MayorBihorario=NoBiho
-                 }
-                             $("#noBiho").attr("noact",MayorBihorario)
-                   $("#noBiho").html("📋 BIHORARIO <strong>No."+MayorBihorario+"</strong>")
-
-                 
-                 if(encontradoDetalle.length==0 && estatus=='F')
-                 {
-                   if(motivoTM){
-                     var BtnTM=`<button data-motivo="${motivoTM}" data-duracion="${totTM}" class="btn btn-outline-warning addtm"> 👁 Ver TM</button>`
-                   }else{
-                      var BtnTM=`<button class="btn btn-outline-secondary addtm"> + Tiempo M</button>`
-                   }
-
-                   
-                  
-
-                   BihoracionInProgress.push(idBiorario)
-                   console.log('detalle',detalle)
-    
-                                var filaDetalleHtml = `
-                        <tr class="table-light fila-desplegable fila-detalle-biho d-none" padre="${biho.id_bihopa}" data-target-ot="${biho.ot_bihopa}" data-target-op="${biho.operacion_bihopa}" data-detalle-id="${idDetalle}" >
-                            <td><div class="slide-wrapper" style="display:block;"></div></td>
-                            <td colspan="1" class="text-end text-muted"><div class="slide-wrapper" style="display:block;"><strong>Horario:</strong></div></td>
-                            
-                            <td colspan="1"><div class="slide-wrapper" style="display:block;"><span class="badge bg-secondary">${hora}</span></div></td>
-
-                            <td colspan="1"><div class="slide-wrapper" style="display:block;"><strong> <span class='qty-acciones'>${esperado}</span></strong>  </div></td>
-                           
-                            <td colspan="1"><div class="slide-wrapper" style="display:block;">Cantidad:<strong> <span class='qty-detalle'>${cantidad}</span></strong>  Pz</div></td>
-                           
-                            <td colspan="2"><div class="slide-wrapper" style="display:block;"><input type="text" class="form-control form-control-lg sumar-detalle" placeholder="Sumar"></div></td>
-                            
-                             <td colspan="1"><div class="" style="display:none;"><span class="porcenDetalle">${porcent} %</span></div></td>
-                          
-                              <td colspan="3"><div class="slide-wrapper" style="display:none;">${BtnTM} </div></td>
-                          
-                        </tr>
-                    `;
-
-                   
-                   if( $nuevaFilaBiho){
-                       $nuevaFilaBiho.after(filaDetalleHtml);
-                   }else{
-                       encontrado.after(filaDetalleHtml);
-
-                 
-                    
-                   }
-                }else{
-                   if(btn!="Asignar"){
-                      encontradoDetalle.remove()
-                   }
-                  
-                  
-                 
-                   
-                   
-                } 
-
-       
-                    
-                });
-                 console.log('fin')
+            // VISIBLE PARA PRUEBAS: Quitamos 'd-none' y forzamos 'display: table-row;' con un fondo amarillo para identificarla
+            var htmlFilaOculta = `
+                <tr class="fila-detalle-biho" data-detalle-id="${idDetalleReal}" style="display: table-row; background-color: #fff3cd; border-left: 4px solid #ffc107;">
+                    <td colspan="10" style="padding: 8px 20px;">
+                        <span style="font-size: 12px; color: #856404; margin-right: 15px;">
+                            <strong>[Fila Control Pruebas]</strong> Horario: ${horarioTexto} | Esperado: <span class="esperado-detalle">${esperado}</span> pzs
+                        </span>
+                        <input type="number" class="sumar-detalle" data-id="${idDetalleReal}" value="${cantidad}" style="width: 70px; text-align: center; border: 1px solid #ffc107; border-radius: 4px;">
+                        <span style="margin-left: 10px; font-weight: bold; color: #856404;">Acumulado HTML: <span class="qty-detalle">${cantidad}</span> pzs</span>
+                    </td>
+                </tr>`;
+            
+            var $ultimaFila = $("#cuerpoTabla").find("tr[data-seguimiento-id='" + idBiorario + "']").last();
+            if ($ultimaFila.length > 0) {
+                $ultimaFila.after(htmlFilaOculta);
+            } else {
+                $filaBase.after(htmlFilaOculta);
             }
-
-      const IsProgress = BihoracionInProgress.find((element) => element == idBiorario);
-       if(tienenext && !IsProgress){
-                       if(!tienenext[idBiorario]){
-   var nuevaLeyenda = `
-    <div class="slide-wrapper" style="
-       position: relative; 
-        top: -5px; 
-        left: 5px; 
-        background-color: #ffc107; 
-        color: #000; 
-        padding: 4px 10px; 
-        border-radius: 4px; 
-        font-weight: bold; 
-        font-size: 10px; 
-        box-shadow: 0px 4px 6px rgba(0,0,0,0.15);
-        display: inline-block;
-        pointer-events: auto;
-        z-index: 5;
-    ">
-        ⚠️ TERMINADA
-    </div>
-`;
-                   //  encontrado.css('position', 'relative');
-                     encontrado.find("td:first").html(nuevaLeyenda);
-                           encontrado.find(".btn-terminarOp").remove();
-                     
-                    
-                   }
-                   }    
+        } 
+        else {
+            // Si ya existía, la hacemos visible temporalmente para auditarla
+            $filaDetalleOriginal.removeClass('d-none').css({'display': 'table-row', 'background-color': '#fff3cd'});
+        }
     });
 }
+
+    });
+
+    if (tienenext) {
+        $("#btnsigBiho").attr('data-pag', tienenext).show();
+    } else {
+        $("#btnsigBiho").hide();
+    }
+    
+    if (btn) {
+        $(btn).prop('disabled', false).text('Siguiente BiHora');
+    }
+    $("#loading, #backfond").hide();
+}
+
 
 main();
 $('#btnLoadBiho').trigger('click');
