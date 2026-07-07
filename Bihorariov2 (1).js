@@ -23,8 +23,8 @@ define(["N/file", "N/url", "N/record", "N/runtime", "N/search","N/ui/serverWidge
     
       if(currentUserObj.id=='437'){
 
-           var neewCli=2368390
-          var namesuper='SUPERVISOR REAL:'+neewCli
+        //   var neewCli=2368390
+        //  var namesuper='SUPERVISOR REAL:'+neewCli
         //currentUserObj.id=5812
       }
       
@@ -561,6 +561,41 @@ body{
 
 
 
+/* ===== ESTILOS DEL PANEL LATERAL DETALLE ===== */
+.drawer-detalle {
+    position: fixed; top: 0; right: -100%; width: 450px; height: 100vh;
+    background-color: #ffffff; box-shadow: -5px 0 25px rgba(0, 0, 0, 0.15);
+    z-index: 100000; transition: right 0.3s ease-in-out;
+    display: flex; flex-direction: column;
+}
+.drawer-detalle.abierto { right: 0; }
+.drawer-header {
+    background: linear-gradient(135deg, #1e3a5f, #2c5282);
+    color: #ffffff; padding: 16px 20px;
+    display: flex; justify-content: space-between; align-items: center;
+}
+.drawer-body { padding: 20px; overflow-y: auto; flex-grow: 1; background-color: #f8fafc; }
+.card-horario-detalle {
+    background: #ffffff; border: 1px solid #e2e8f0;
+    border-radius: 8px; padding: 15px; margin-bottom: 12px;
+}
+@media (max-width: 576px) { .drawer-detalle { width: 100vw; right: -100vw; } }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
                  </style>
             
@@ -696,6 +731,51 @@ body{
      class="list-group position-absolute"
      style="display:none;">
 </div>
+
+
+
+<!-- PANEL LATERAL MODERNO (OFFCANVAS) PARA DETALLES DE ASIGNACIÓN -->
+<div class="offcanvas offcanvas-end w-100 w-md-50" tabindex="-1" id="panelDetalleEmpleado" aria-labelledby="panelDetalleEmpleadoLabel" style="max-width: 550px;">
+  <div class="offcanvas-header bg-dark text-white">
+    <h5 class="offcanvas-title" id="panelDetalleEmpleadoLabel">
+      <span id="panel-icono">👤</span> Detalle de Asignación
+    </h5>
+    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+  </div>
+  <div class="offcanvas-body bg-light">
+    <!-- Encabezado del Empleado y OT dentro del panel -->
+    <div class="card mb-3 shadow-sm">
+      <div class="card-body">
+        <h6 class="card-subtitle mb-2 text-muted" id="panel-ot-name">ORDEN DE TRABAJO</h6>
+        <h5 class="card-title text-primary" id="panel-empleado-name">Nombre del Empleado</h5>
+        <p class="card-text mb-1"><strong>Operación:</strong> <span id="panel-operacion-name">-</span></p>
+        <p class="card-text mb-0"><strong>Estándar Asignado:</strong> <span id="panel-estandar-val">-</span></p>
+      </div>
+    </div>
+
+    <!-- Contenedor dinámico donde se inyectarán los horarios y acciones -->
+    <div id="panel-contenido-dinamico">
+      <!-- Aquí se renderizarán las filas de tiempos de forma vertical y limpia -->
+    </div>
+  </div>
+</div>
+
+<div id="drawerDetalleEmpleado" class="drawer-detalle">
+    <div class="drawer-header">
+        <h4 id="drawerTituloEmpleado">Detalle de Operación</h4>
+        <button type="button" class="btn-cerrar-drawer" id="btnCerrarDrawer">&times;</button>
+    </div>
+    <div class="drawer-body" id="drawerContenidoBody">
+        <!-- Aquí es donde jQuery inyectará el contenido -->
+    </div>
+</div>
+
+
+
+<!-- Scripts de Bootstrap requeridos para controlar el Panel Lateral -->
+<!--<script src="https://jsdelivr.net"></script>-->
+
+
 
 <input
     type="hidden"
